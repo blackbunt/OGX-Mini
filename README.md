@@ -1,6 +1,125 @@
 # OGX-Mini
 ![OGX-Mini Boards](images/OGX-Mini-github.jpg "OGX-Mini Boards")
 
+## Schnellanleitung: Pico 2 W + Bluetooth-Controller an der PS3
+
+Dieser Fork ist auf ein Setup zugeschnitten: **Raspberry Pi Pico 2 W** als Adapter,
+ein **Bluetooth-Controller** (getestet mit Xbox Elite Series 2), Ausgabe an die
+**PlayStation 3**. Die Original-Dokumentation (englisch) folgt weiter unten.
+
+Gegenüber dem Original ändert der Fork:
+
+- **L2/R2 sind an der PS3 analog.** Bisher kam nur „gedrückt/nicht gedrückt“ an,
+  Spiele wie Gran Turismo bekamen kein abgestuftes Gas und keine abgestufte Bremse.
+  Jetzt liefern LT/RT Druckwerte von 1 bis 255.
+- **Die Druckwerte von ✕, ○ und □ waren vertauscht** (A meldete den Druck von □,
+  B den von ✕, X den von ○). Behoben.
+- **Baut mit GCC 16** (fehlendes `#include <algorithm>` in `TaskQueue.h`).
+
+Beides wurde an den USB-Rohdaten nachgemessen, das L2/R2-Verhalten zusätzlich
+gegen einen echten DualShock 3: Das L2-Bit geht beim ersten Druckwert über 0 an
+und bei 0 wieder aus, ohne Hysterese. Genau so verhält sich jetzt auch der Pico.
+
+### 1. Firmware bauen (Arch Linux)
+
+```zsh
+sudo pacman -S cmake ninja arm-none-eabi-gcc arm-none-eabi-newlib
+git clone --recursive https://github.com/blackbunt/OGX-Mini.git
+cd OGX-Mini
+git clone --depth 1 --branch 2.1.0 --recurse-submodules --shallow-submodules \
+    https://github.com/raspberrypi/pico-sdk.git Firmware/external/pico-sdk
+cd Firmware/RP2040
+cmake -S . -B build -G Ninja -DPICO_SDK_PATH="$PWD/../external/pico-sdk" \
+      -DCMAKE_BUILD_TYPE=Release -DOGXM_BOARD=PI_PICO2W -DMAX_GAMEPADS=1
+CXXFLAGS="-include cstdint" cmake --build build
+```
+
+Ergebnis: `build/OGX-Mini-v1.0.0a3-PI_PICO2W.uf2`.
+
+- `CXXFLAGS="-include cstdint"` ist nötig, weil das SDK-Werkzeug `pioasm` (SDK 2.1.0)
+  mit GCC 16 sonst nicht baut. Die Variable wirkt nur auf die Hilfswerkzeuge,
+  die beim Bauen konfiguriert werden, nicht auf die Firmware selbst.
+- Der Build patcht das Submodul `bluepad32` absichtlich. Diese Änderung **nicht**
+  committen.
+
+### 2. Flashen
+
+1. **BOOTSEL** am Pico gedrückt halten, Pico per USB an den PC stecken, loslassen.
+2. Die `.uf2` auf das Laufwerk `RP2350` kopieren. Der Pico startet von selbst neu.
+
+### 3. PS3-Modus einstellen (einmalig)
+
+Ab Werk emuliert die Firmware einen Original-Xbox-Controller. Bei verbundenem
+Controller **Menü (☰) + Steuerkreuz links 3 Sekunden halten**. Der Pico speichert
+den Modus und startet neu. Er bleibt auch nach dem Ausstecken und nach einem
+Firmware-Update im PS3-Modus (beobachtet beim Wechsel von Release alpha3 auf diesen Fork).
+
+Danach den Pico per USB an die PS3 stecken. Die Xbox-Taste ist die PS-Taste.
+
+### 4. Controller koppeln
+
+Die LED am Pico zeigt den Zustand:
+
+| LED | Bedeutung |
+|---|---|
+| blinkt | kein Controller verbunden, Pico sucht |
+| leuchtet dauerhaft | Controller verbunden |
+
+**Der Pico nimmt immer Kopplungen an**, es gibt keinen eigenen Pairing-Modus am Pico.
+Er merkt sich gekoppelte Controller, die sich später von selbst wieder verbinden.
+
+**Es ist immer nur ein Controller aktiv** (Build mit `MAX_GAMEPADS=1`). Laut Code
+(`Bluepad32.cpp`, nicht ausprobiert) kann sich ein zweiter Controller zwar per
+Bluetooth verbinden, seine Eingaben werden aber ignoriert, solange der erste
+verbunden ist. Zum Wechseln:
+
+1. Den bisherigen Controller **ausschalten** (Xbox-Controller: Xbox-Taste gedrückt
+   halten, bis sie erlischt).
+2. Warten, bis die LED am Pico **blinkt**.
+3. Den neuen Controller in den Kopplungsmodus bringen:
+
+| Controller | Kopplungsmodus |
+|---|---|
+| Xbox Series / One (Bluetooth) / Elite 2 | Kopplungstaste oben halten, bis das Xbox-Logo schnell blinkt |
+| DualShock 4 | **Share + PS** halten, bis die Lichtleiste schnell blinkt |
+| DualSense | **Create + PS** halten, bis das Licht schnell blinkt |
+| Switch Pro | Sync-Taste oben neben dem USB-Anschluss halten |
+| 8BitDo | je nach Modell verschieden, siehe Anleitung des Controllers bzw. Bluepad32-Liste unten |
+| DualShock 3 | lässt sich nicht per Tastendruck koppeln, an der PS3 einfach direkt benutzen |
+
+4. Sobald die LED dauerhaft leuchtet, ist der neue Controller aktiv.
+
+Weitere Controller und Details: [Bluepad32 – Supported gamepads](https://bluepad32.readthedocs.io/en/latest/supported_gamepads/).
+
+### 5. Belegung an der PS3
+
+| Xbox | PS3 | analog |
+|---|---|---|
+| A / B / X / Y | ✕ / ○ / □ / △ | nein, nur 0 oder 255 (der Xbox-Controller misst dort keinen Druck) |
+| LB / RB | L1 / R1 | nein |
+| **LT / RT** | **L2 / R2** | **ja, 1 bis 255** |
+| Sticks, L3 / R3 | Sticks, L3 / R3 | ja |
+| Steuerkreuz | Steuerkreuz | nein |
+| Ansicht (⧉) / Menü (☰) / Xbox | Select / Start / PS | – |
+
+### 6. Feinschliff in der Web-App
+
+[Web-App](https://wiredopposite.github.io/OGX-Mini-WebApp/) öffnen und per Bluetooth
+verbinden (beim Pico 2 W ohne Tastenkombination).
+
+- **Trigger-Deadzone auf etwa 1 % setzen.** Der Abzug des Elite rauscht kurz über dem
+  Nullpunkt (Werte 1 bis 2). Ohne Deadzone kann das L2/R2-Bit beim langsamen Loslassen
+  mehrmals hintereinander an- und ausgehen. Die Firmware selbst bleibt dabei
+  originalgetreu.
+
+### Bekannte Eigenheiten
+
+- **Am Linux-PC vibriert der Controller dauerhaft**, sobald der Pico im PS3-Modus
+  angesteckt wird. An der PS3 passiert das nicht. Die Vibration endet, sobald der
+  PC einen neuen Vibrationsbefehl schickt. Ursache noch nicht geklärt.
+- Nach dem Flashen startet der Pico unter Umständen im Original-Xbox-Modus.
+  Dann Schritt 3 wiederholen.
+
 Firmware for the RP2040, capable of emulating gamepads for several game consoles. The firmware comes in many flavors, supported on the [Adafruit Feather USB Host board](https://www.adafruit.com/product/5723), Pi Pico, Pi Pico 2, Pi Pico W, Pi Pico 2 W, Waveshare RP2040-Zero, Pico/ESP32 hybrid, and a 4-Channel RP2040-Zero setup.
 
 [**Visit the web app here**](https://wiredopposite.github.io/OGX-Mini-WebApp/) to change your mappings and deadzone settings. To pair the OGX-Mini with the web app via USB, plug your controller in, then connect it to your PC, hold **Start + Left Bumper + Right Bumper** to enter web app mode. Click "Connect via USB" in the web app and select the OGX-Mini. You can also pair via Bluetooth, no extra steps are needed in that case. 
