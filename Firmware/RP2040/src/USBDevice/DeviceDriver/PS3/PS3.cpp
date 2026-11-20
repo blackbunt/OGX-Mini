@@ -68,8 +68,16 @@ void PS3Device::process(const uint8_t idx, Gamepad& gamepad)
         if (gp_in.buttons & Gamepad::BUTTON_SYS)      report_in_.buttons[2] |= PS3::Buttons2::SYS;
         if (gp_in.buttons & Gamepad::BUTTON_MISC)     report_in_.buttons[2] |= PS3::Buttons2::TP;
 
+        // A real DS3 sets the L2/R2 bit at the first non-zero pressure value and
+        // clears it at zero, with no hysteresis (measured over USB).
         if (gp_in.trigger_l) report_in_.buttons[1] |= PS3::Buttons1::L2;
         if (gp_in.trigger_r) report_in_.buttons[1] |= PS3::Buttons1::R2;
+
+        // Triggers are analog on every supported host, so the pressure bytes are
+        // filled regardless of analog_enabled(). Games like Gran Turismo read
+        // l2_axis/r2_axis for throttle and brake, not the digital bits.
+        report_in_.l2_axis = gp_in.trigger_l;
+        report_in_.r2_axis = gp_in.trigger_r;
 
         report_in_.joystick_lx = Scale::int16_to_uint8(gp_in.joystick_lx);
         report_in_.joystick_ly = Scale::int16_to_uint8(gp_in.joystick_ly);
@@ -99,9 +107,9 @@ void PS3Device::process(const uint8_t idx, Gamepad& gamepad)
             report_in_.left_axis     = (gp_in.dpad & Gamepad::DPAD_LEFT)  ? 0xFF : 0;
 
             report_in_.triangle_axis = (gp_in.buttons & Gamepad::BUTTON_Y) ? 0xFF : 0;
-            report_in_.circle_axis   = (gp_in.buttons & Gamepad::BUTTON_X) ? 0xFF : 0;
-            report_in_.cross_axis    = (gp_in.buttons & Gamepad::BUTTON_B) ? 0xFF : 0;
-            report_in_.square_axis   = (gp_in.buttons & Gamepad::BUTTON_A) ? 0xFF : 0;
+            report_in_.circle_axis   = (gp_in.buttons & Gamepad::BUTTON_B) ? 0xFF : 0;
+            report_in_.cross_axis    = (gp_in.buttons & Gamepad::BUTTON_A) ? 0xFF : 0;
+            report_in_.square_axis   = (gp_in.buttons & Gamepad::BUTTON_X) ? 0xFF : 0;
 
             report_in_.r1_axis = (gp_in.buttons & Gamepad::BUTTON_RB) ? 0xFF : 0;
             report_in_.l1_axis = (gp_in.buttons & Gamepad::BUTTON_LB) ? 0xFF : 0;
