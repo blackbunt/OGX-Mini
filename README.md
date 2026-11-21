@@ -20,6 +20,33 @@ Beides wurde an den USB-Rohdaten nachgemessen, das L2/R2-Verhalten zusätzlich
 gegen einen echten DualShock 3: Das L2-Bit geht beim ersten Druckwert über 0 an
 und bei 0 wieder aus, ohne Hysterese. Genau so verhält sich jetzt auch der Pico.
 
+### Kurzweg: bauen und flashen per Script
+
+```zsh
+sudo pacman -S --needed git cmake ninja python arm-none-eabi-gcc arm-none-eabi-newlib udisks2
+git clone --recursive https://github.com/blackbunt/OGX-Mini.git
+cd OGX-Mini/Firmware/RP2040
+./build-and-flash.sh
+```
+
+Das Script fragt, für welchen Pi gebaut wird (Pico, Pico 2, Pico W, Pico 2 W,
+RP2040-Zero, Adafruit Feather), und erledigt dann den Rest:
+
+- holt das pico-sdk 2.1.0, falls es fehlt, und baut mit dem GCC-16-Workaround
+  in einem eigenen Ordner je Board (`build/<BOARD>`),
+- fordert dazu auf, den Pico mit gedrückter **BOOTSEL**-Taste anzustecken, und
+  wartet bis zu 2 Minuten auf das Laufwerk,
+- bricht ab, wenn ein Pico mit dem anderen Chip steckt (Pico 2 meldet sich als
+  `RP2350`, Pico 1 als `RPI-RP2`), statt die falsche Firmware aufzuspielen,
+- kopiert die `.uf2` und meldet Erfolg, sobald der Pico neu gestartet ist.
+
+Root-Rechte braucht es nicht, das Laufwerk hängt `udisksctl` ein.
+Varianten: `./build-and-flash.sh PI_PICO2W` überspringt die Abfrage,
+`--build-only` baut nur, `MAX_GAMEPADS=2 ./build-and-flash.sh` setzt die
+Controller-Zahl (1 bis 4, Standard 1).
+
+Danach weiter mit Schritt 3. Wer lieber von Hand baut, folgt Schritt 1 und 2.
+
 ### 1. Firmware bauen (Arch Linux)
 
 ```zsh
